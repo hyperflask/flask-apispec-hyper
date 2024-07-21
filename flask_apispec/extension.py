@@ -19,7 +19,7 @@ class FlaskApiSpec:
             'APISPEC_SPEC': APISpec(
                 title='pets',
                 version='v1',
-                openapi_version='2.0',
+                openapi_version='3.1.0',
                 plugins=[MarshmallowPlugin()],
             ),
             'APISPEC_SWAGGER_URL': '/swagger/',
@@ -38,31 +38,35 @@ class FlaskApiSpec:
         OPTIONS requests in the specification
     """
 
-    def __init__(self, app=None, document_options=True):
+    def __init__(self, app=None, **kwargs):
         self._deferred = []
         self.app = app
         self.view_converter = None
         self.resource_converter = None
         self.spec = None
-        self.document_options = document_options
 
         if app:
-            self.init_app(app)
+            self.init_app(app, **kwargs)
 
-    def init_app(self, app):
+    def init_app(self, app, spec=None, title=None, version="v1", openapi_version="3.1.0", url_prefix=None, spec_url="/apispec.json", doc_url="/apidocs", document_options=None):
         self.app = app
-        self.spec = self.app.config.get('APISPEC_SPEC') or \
-                    make_apispec(self.app.config.get('APISPEC_TITLE', 'flask-apispec'),
-                                 self.app.config.get('APISPEC_VERSION', 'v1'),
-                                 self.app.config.get('APISPEC_OAS_VERSION', '2.0'))
-        self.add_swagger_routes()
-        self.resource_converter = ResourceConverter(self.app,
+        self.spec = spec or make_apispec(app.config.get('APISPEC_TITLE', title or app.import_name),
+                                 app.config.get('APISPEC_VERSION', version),
+                                 app.config.get('APISPEC_OAS_VERSION', openapi_version))
+        self.url_prefix = app.config.get('APISPEC_URL_PREFIX', url_prefix)
+        self.spec_url = app.config.get('APISPEC_SPEC_URL', spec_url)
+        self.doc_url = app.config.get('APISPEC_DOC_URL', doc_url)
+        self.document_options = document_options
+        
+        self.resource_converter = ResourceConverter(app,
                                                     self.spec,
                                                     self.document_options)
-        self.view_converter = ViewConverter(self.app, self.spec, self.document_options)
+        self.view_converter = ViewConverter(app, self.spec, self.document_options)
 
         for deferred in self._deferred:
             deferred()
+
+        self.add_doc_routes()
 
     def _defer(self, callable, *args, **kwargs):
         bound = functools.partial(callable, *args, **kwargs)
@@ -70,30 +74,29 @@ class FlaskApiSpec:
         if self.app:
             bound()
 
-    def add_swagger_routes(self):
+    def add_doc_routes(self):
+        bp_name = f"flask-apispec-{self.spec.version}"
         blueprint = flask.Blueprint(
-            'flask-apispec',
+            bp_name,
             __name__,
-            static_folder='./static',
-            template_folder='./templates',
-            static_url_path='/flask-apispec/static',
+            template_folder='templates',
+            url_prefix=self.url_prefix,
         )
 
-        json_url = self.app.config.get('APISPEC_SWAGGER_URL', '/swagger/')
-        if json_url:
-            blueprint.add_url_rule(json_url, 'swagger-json', self.swagger_json)
+        if self.spec_url:
+            blueprint.add_url_rule(self.spec_url, 'spec', self.spec_json)
 
-        ui_url = self.app.config.get('APISPEC_SWAGGER_UI_URL', '/swagger-ui/')
-        if ui_url:
-            blueprint.add_url_rule(ui_url, 'swagger-ui', self.swagger_ui)
+        if self.doc_url:
+            @blueprint.route(self.doc_url)
+            def doc():
+                return flask.render_template("apidoc.html", spec_url=flask.url_for(f"{bp_name}.spec"), title=self.spec.title)
 
         self.app.register_blueprint(blueprint)
 
-    def swagger_json(self):
-        return flask.jsonify(self.spec.to_dict())
-
-    def swagger_ui(self):
-        return flask.render_template('swagger-ui.html')
+    def spec_json(self):
+        return flask.jsonify(self.spec.to_dict()), 200, {
+            "Access-Control-Allow-Origin": "*"
+        }
 
     def register_existing_resources(self):
         for name, rule in self.app.view_functions.items():
@@ -157,7 +160,7 @@ class FlaskApiSpec:
             self.spec.path(**path)
 
 
-def make_apispec(title='flask-apispec', version='v1', openapi_version='2.0'):
+def make_apispec(title='flask-apispec', version='v1', openapi_version='3.1.0'):
     return APISpec(
         title=title,
         version=version,

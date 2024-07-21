@@ -4,7 +4,42 @@ from flask_apispec import utils
 from flask_apispec.wrapper import Wrapper
 
 
-def use_kwargs(args, location=None, inherit=None, apply=None, **kwargs):
+def use_args(argmap, location=None, inherit=None, apply=None, activate=True, as_kwargs=False, **kwargs):
+    """Inject keyword arguments from the specified webargs arguments into the
+    decorated view function.
+
+    Usage:
+
+    .. code-block:: python
+
+        from marshmallow import fields
+
+        @use_args({'name': fields.Str(), 'category': fields.Str()})
+        def get_pets(args):
+            return Pet.query.filter_by(**args).all()
+
+    :param argmap: Mapping of argument names to :class:`Field <marshmallow.fields.Field>`
+        objects, :class:`Schema <marshmallow.Schema>`, or a callable which accepts a
+        request and returns a :class:`Schema <marshmallow.Schema>`
+    :param location: Default request location to parse
+    :param inherit: Inherit args from parent classes
+    :param apply: Parse request with specified args
+    """
+
+    kwargs.update({'location': location})
+
+    def wrapper(func):
+        options = {
+            'argmap': argmap,
+            'kwargs': kwargs,
+            'as_kwargs': as_kwargs
+        }
+        annotate(func, 'args', [options], inherit=inherit, apply=apply)
+        return _activate(func) if activate else func
+    return wrapper
+
+
+def use_kwargs(argmap, location=None, inherit=None, apply=None, activate=True, **kwargs):
     """Inject keyword arguments from the specified webargs arguments into the
     decorated view function.
 
@@ -18,27 +53,17 @@ def use_kwargs(args, location=None, inherit=None, apply=None, **kwargs):
         def get_pets(**kwargs):
             return Pet.query.filter_by(**kwargs).all()
 
-    :param args: Mapping of argument names to :class:`Field <marshmallow.fields.Field>`
+    :param argmap: Mapping of argument names to :class:`Field <marshmallow.fields.Field>`
         objects, :class:`Schema <marshmallow.Schema>`, or a callable which accepts a
         request and returns a :class:`Schema <marshmallow.Schema>`
     :param location: Default request location to parse
     :param inherit: Inherit args from parent classes
     :param apply: Parse request with specified args
     """
-
-    kwargs.update({'location': location})
-
-    def wrapper(func):
-        options = {
-            'args': args,
-            'kwargs': kwargs,
-        }
-        annotate(func, 'args', [options], inherit=inherit, apply=apply)
-        return activate(func)
-    return wrapper
+    return use_args(argmap, location, inherit, apply, activate, True, **kwargs)
 
 
-def marshal_with(schema, code='default', description='', inherit=None, apply=None):
+def marshal_with(schema, code='default', description='', content_type="application/json", inherit=None, apply=None, activate=True):
     """Marshal the return value of the decorated view function using the
     specified schema.
 
@@ -57,6 +82,7 @@ def marshal_with(schema, code='default', description='', inherit=None, apply=Non
     :param schema: :class:`Schema <marshmallow.Schema>` class or instance, or `None`
     :param code: Optional HTTP response code
     :param description: Optional response description
+    :param content_type: Optional response content type header (only used in OpenAPI 3.x)
     :param inherit: Inherit schemas from parent classes
     :param apply: Marshal response with specified schema
     """
@@ -65,14 +91,15 @@ def marshal_with(schema, code='default', description='', inherit=None, apply=Non
             code: {
                 'schema': schema or {},
                 'description': description,
+                'content_type': content_type
             },
         }
         annotate(func, 'schemas', [options], inherit=inherit, apply=apply)
-        return activate(func)
+        return _activate(func) if activate else func
     return wrapper
 
 
-def doc(inherit=None, **kwargs):
+def doc(inherit=None, activate=True, **kwargs):
     """Annotate the decorated view function or class with the specified Swagger
     attributes.
 
@@ -88,18 +115,18 @@ def doc(inherit=None, **kwargs):
     """
     def wrapper(func):
         annotate(func, 'docs', [kwargs], inherit=inherit)
-        return activate(func)
+        return _activate(func) if activate else func
     return wrapper
 
 
-def wrap_with(wrapper_cls):
+def wrap_with(wrapper_cls, activate=True):
     """Use a custom `Wrapper` to apply annotations to the decorated function.
 
     :param wrapper_cls: Custom `Wrapper` subclass
     """
     def wrapper(func):
         annotate(func, 'wrapper', [{'wrapper': wrapper_cls}])
-        return activate(func)
+        return _activate(func) if activate else func
     return wrapper
 
 
@@ -123,3 +150,6 @@ def activate(func):
 
     wrapped.__apispec__['wrapped'] = True
     return wrapped
+
+
+_activate = activate

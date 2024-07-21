@@ -34,13 +34,13 @@ def read(fname):
 
 
 setup(
-    name='flask-apispec',
+    name='flask-apispec-hyper',
     version=find_version('flask_apispec/__init__.py'),
     description='Build and document REST APIs with Flask and apispec',
     long_description=read('README.rst'),
     author='Joshua Carp',
     author_email='jm.carp@gmail.com',
-    url='https://github.com/jmcarp/flask-apispec',
+    url='https://github.com/hyperflask/flask-apispec-hyper',
     packages=find_packages(exclude=('test*', )),
     package_dir={'flask_apispec': 'flask_apispec'},
     include_package_data=True,
@@ -48,10 +48,11 @@ setup(
     license='MIT',
     zip_safe=False,
     keywords='flask marshmallow webargs apispec',
-    python_requires=">=3.6",
+    python_requires=">=3.8",
+    dependencies=["packaging>=17.0"],
     test_suite='tests',
     project_urls={
-        'Bug Reports': 'https://github.com/jmcarp/flask-apispec/issues',
+        'Bug Reports': 'https://github.com/hyperflask/flask-apispec-hyper/issues',
         'Changelog': 'https://flask-apispec.readthedocs.io/en/latest/changelog.html',
     },
 )

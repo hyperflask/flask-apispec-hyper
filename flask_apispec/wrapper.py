@@ -1,17 +1,7 @@
-from flask import Response
-
-from collections.abc import Mapping
-
 import flask
-import marshmallow as ma
 import werkzeug
 from webargs import flaskparser
-
 from flask_apispec import utils
-
-MARSHMALLOW_VERSION_INFO = tuple(
-    [int(part) for part in ma.__version__.split('.') if part.isdigit()]
-)
 
 
 class Wrapper:
@@ -40,14 +30,9 @@ class Wrapper:
         annotation = utils.resolve_annotations(self.func, 'args', self.instance)
         if annotation.apply is not False:
             for option in annotation.options:
-                schema = utils.resolve_schema(option['args'], request=flask.request)
-                parsed = parser.parse(schema, location=option['kwargs']['location'])
-                if getattr(schema, 'many', False):
-                    args += tuple(parsed)
-                elif isinstance(parsed, Mapping):
-                    kwargs.update(parsed)
-                else:
-                    args += (parsed,)
+                schema = utils.resolve_schema(option['argmap'], request=flask.request)
+                parsed_args = parser.parse(schema, **option['kwargs'])
+                args, kwargs = parser._update_args_kwargs(args, kwargs, parsed_args, option['as_kwargs'])
 
         return self.func(*args, **kwargs)
 
@@ -59,8 +44,7 @@ class Wrapper:
         schema = schemas.get(status_code, schemas.get('default'))
         if schema and annotation.apply is not False:
             schema = utils.resolve_schema(schema['schema'], request=flask.request)
-            dumped = schema.dump(result)
-            output = dumped.data if MARSHMALLOW_VERSION_INFO[0] < 3 else dumped
+            output = schema.dump(result)
         else:
             output = result
 

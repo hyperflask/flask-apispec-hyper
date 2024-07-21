@@ -1,7 +1,6 @@
 import copy
 import functools
 
-import apispec
 from apispec.core import VALID_METHODS
 from apispec.ext.marshmallow import MarshmallowPlugin
 
@@ -11,9 +10,6 @@ from marshmallow.utils import is_instance_or_subclass
 from flask_apispec.paths import rule_to_path, rule_to_params
 from flask_apispec.utils import resolve_resource, resolve_annotations, merge_recursive
 
-APISPEC_VERSION_INFO = tuple(
-    [int(part) for part in apispec.__version__.split('.') if part.isdigit()]
-)
 
 class Converter:
     def __init__(self, app, spec, document_options=True):
@@ -35,8 +31,11 @@ class Converter:
         endpoint = endpoint or target.__name__.lower()
         if blueprint:
             endpoint = '{}.{}'.format(blueprint, endpoint)
-        rules = self.app.url_map._rules_by_endpoint[endpoint]
-        return [self.get_path(rule, target, **kwargs) for rule in rules]
+        try:
+            rules = self.app.url_map._rules_by_endpoint[endpoint]
+            return [self.get_path(rule, target, **kwargs) for rule in rules]
+        except KeyError:
+            pass
 
     def get_path(self, rule, target, **kwargs):
         operations = self.get_operations(rule, target)
@@ -76,7 +75,7 @@ class Converter:
         annotation = resolve_annotations(view, 'args', parent)
         extra_params = []
         for args in annotation.options:
-            schema = args.get('args', {})
+            schema = args.get('argmap', {})
             openapi_converter = openapi.schema2parameters
             if not is_instance_or_subclass(schema, Schema):
                 if callable(schema):
@@ -97,7 +96,22 @@ class Converter:
 
     def get_responses(self, view, parent=None):
         annotation = resolve_annotations(view, 'schemas', parent)
-        return merge_recursive(annotation.options)
+        options = []
+        for option in annotation.options:
+            exploded = {}
+            for status_code, meta in option.items():
+                meta = copy.copy(meta)
+                content_type = meta.pop('content_type', None) or 'application/json'
+                if self.spec.openapi_version.major < 3:
+                    exploded[status_code] = meta
+                else:
+                    exploded[status_code] = {
+                        'content': {
+                            content_type: meta
+                        }
+                    }
+            options.append(exploded)
+        return merge_recursive(options)
 
     def _convert_dict_schema(self, openapi_converter, schema, location, **options):
         """When location is 'body' and OpenApi is 2, return one param for body fields.
